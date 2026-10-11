@@ -17,6 +17,19 @@ apps you need quickly, stay focused, and use your phone more intentionally.
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/06.png" alt="Screenshot 6" width="28%" />
 </p>
 
+## XMB Home (PS3-style cross menu)
+
+Turn it on in **Settings > Customisation > XMB Home**.
+
+- Swipe left/right to change category (Settings, Favourites, Apps, then your folders).
+- Swipe up/down to move through the items of that category.
+- Tap an item to select it, tap the selected item to launch it.
+- Long-press an app for its options, long-press a folder icon for folder options,
+  long-press empty space for launcher settings.
+- Pull past the last item to open the app drawer, past the first to open the notification panel.
+
+Code lives in `app/src/main/java/com/minimo/launcher/ui/xmb/`.
+
 ## Key Features:
 
 - **Minimalist Home Screen**: Use a text-first layout with optional app icons. Keep a few favourite
