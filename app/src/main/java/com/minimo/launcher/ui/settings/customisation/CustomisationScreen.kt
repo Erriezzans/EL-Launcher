@@ -892,6 +892,15 @@ fun CustomisationScreen(
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
             ToggleItem(
+                title = stringResource(R.string.xmb_home),
+                subtitle = stringResource(R.string.xmb_home_description),
+                isChecked = state.xmbHome,
+                onToggleClick = viewModel::onToggleXmbHome
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            ToggleItem(
                 title = stringResource(R.string.compact_app_touch_area),
                 subtitle = stringResource(R.string.compact_app_touch_area_description),
                 isChecked = state.compactAppTouchArea,

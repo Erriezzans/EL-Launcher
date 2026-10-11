@@ -80,6 +80,7 @@ data class HomeScreenState(
     val fastScrollerAlignment: FastScrollerAlignment = FastScrollerAlignment.Right,
     val backOpensAppDrawer: Boolean = true,
     val compactAppTouchArea: Boolean = false,
+    val xmbHome: Boolean = false,
     val keyboardDoneOpensFirstApp: Boolean = false
 ) {
     val homeRows: List<LauncherRow>

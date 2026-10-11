@@ -163,6 +163,8 @@
     <string name="back_opens_drawer_description">Press Back on home screen to open the app drawer</string>
     <string name="hide_settings_icon">Hide Settings Icon</string>
     <string name="hide_settings_icon_description">Hides the app drawer settings icon. Long-press empty space on Home or the app drawer to open Settings.</string>
+    <string name="xmb_home">XMB Home</string>
+    <string name="xmb_home_description">Use a PS3-style cross menu: categories across, apps down.</string>
     <string name="compact_app_touch_area">Compact App Touch Area</string>
     <string name="compact_app_touch_area_description">Limit each app\'s touch area to its visible content.</string>
     <string name="done_opens_first_app">Done Opens First App</string>

@@ -134,6 +134,7 @@ class CustomisationViewModel @Inject constructor(
                             fastScrollerAlignment = prefs.fastScrollerAlignment,
                             backOpensAppDrawer = prefs.backOpensAppDrawer,
                             compactAppTouchArea = prefs.compactAppTouchArea,
+                            xmbHome = prefs.xmbHome,
                             keyboardDoneOpensFirstApp = prefs.keyboardDoneOpensFirstApp
                         )
                     }
@@ -501,6 +502,12 @@ class CustomisationViewModel @Inject constructor(
     fun onToggleBackOpensAppDrawer() {
         viewModelScope.launch {
             preferenceHelper.setBackOpensAppDrawer(_state.value.backOpensAppDrawer.not())
+        }
+    }
+
+    fun onToggleXmbHome() {
+        viewModelScope.launch {
+            preferenceHelper.setXmbHome(_state.value.xmbHome.not())
         }
     }
 

@@ -49,6 +49,7 @@ import com.minimo.launcher.ui.home.components.FolderDialogs
 import com.minimo.launcher.ui.home.components.HomeBody
 import com.minimo.launcher.ui.home.components.LaunchDelayDialog
 import com.minimo.launcher.ui.home.components.WhatsNewDialog
+import com.minimo.launcher.ui.xmb.XmbHomeBody
 import com.minimo.launcher.utils.lockScreen
 import com.minimo.launcher.utils.showNotificationDrawer
 
@@ -64,6 +65,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val xmb = state.xmbHome
     val homeLazyListState = rememberLazyListState()
     var shortcutToDelete by remember { mutableStateOf<AppInfo?>(null) }
 
@@ -148,7 +150,8 @@ fun HomeScreen(
         useDarkIconsOnSurface = useDarkIconsOnSurface
     )
 
-    ApplyNavigationBarIconColor(useDarkNavigationIcons)
+    // The XMB background is always dark, so keep light navigation icons there.
+    ApplyNavigationBarIconColor(useDarkNavigationIcons && !xmb)
 
     val useDarkBottomSheetStatusBarIcons =
         shouldUseDarkStatusBarIcons(
@@ -160,7 +163,13 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(safeDrawingTop)
+            .then(
+                if (xmb) {
+                    // XMB mode draws edge to edge and handles its own gestures.
+                    Modifier
+                } else {
+                    Modifier
+                        .windowInsetsPadding(safeDrawingTop)
             .pointerInput(state.doubleTapToLock, onSettingsClick) {
                 detectTapGestures(
                     onDoubleTap = {
@@ -187,12 +196,26 @@ fun HomeScreen(
                     }
                 )
             }
+                }
+            )
     ) {
         Scaffold(
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { paddingValues ->
-            if (state.initialLoaded) {
+            if (state.initialLoaded && xmb) {
+                XmbHomeBody(
+                    state = state,
+                    viewModel = viewModel,
+                    statusBarVisible = statusBarVisible,
+                    navigationBarVisible = navigationBarVisible,
+                    useDarkStatusBarIcons = false,
+                    useDarkNavigationBarIcons = false,
+                    onOpenAppDrawer = onOpenAppDrawer,
+                    onSettingsClick = onSettingsClick,
+                    onDeleteShortcut = { shortcutToDelete = it }
+                )
+            } else if (state.initialLoaded) {
                 HomeBody(
                     paddingValues = paddingValues,
                     state = state,

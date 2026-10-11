@@ -255,6 +255,7 @@ class HomeViewModel @Inject constructor(
                             fastScrollerAlignment = prefs.fastScrollerAlignment,
                             backOpensAppDrawer = prefs.backOpensAppDrawer,
                             compactAppTouchArea = prefs.compactAppTouchArea,
+                            xmbHome = prefs.xmbHome,
                             keyboardDoneOpensFirstApp = prefs.keyboardDoneOpensFirstApp,
                             allApps = newAllApps,
                             filteredAllApps = newFilteredApps,
