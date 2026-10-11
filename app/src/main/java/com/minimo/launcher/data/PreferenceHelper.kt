@@ -128,6 +128,7 @@ class PreferenceHelper @Inject constructor(
         private val KEY_BACK_OPENS_APP_DRAWER = booleanPreferencesKey("KEY_BACK_OPENS_APP_DRAWER")
         private val KEY_COMPACT_APP_TOUCH_AREA =
             booleanPreferencesKey("KEY_COMPACT_APP_TOUCH_AREA")
+        private val KEY_XMB_HOME = booleanPreferencesKey("KEY_XMB_HOME")
         private val KEY_KEYBOARD_DONE_OPENS_FIRST_APP =
             booleanPreferencesKey("KEY_KEYBOARD_DONE_OPENS_FIRST_APP")
         private val KEY_SCREEN_ORIENTATION = stringPreferencesKey("KEY_SCREEN_ORIENTATION")
@@ -500,6 +501,12 @@ class PreferenceHelper @Inject constructor(
         }
     }
 
+    suspend fun setXmbHome(enable: Boolean) {
+        preferences.edit {
+            it[KEY_XMB_HOME] = enable
+        }
+    }
+
     suspend fun setCompactAppTouchArea(enable: Boolean) {
         preferences.edit {
             it[KEY_COMPACT_APP_TOUCH_AREA] = enable
@@ -627,6 +634,7 @@ class PreferenceHelper @Inject constructor(
                 ),
                 backOpensAppDrawer = prefs[KEY_BACK_OPENS_APP_DRAWER] ?: true,
                 compactAppTouchArea = prefs[KEY_COMPACT_APP_TOUCH_AREA] ?: false,
+                xmbHome = prefs[KEY_XMB_HOME] ?: false,
                 keyboardDoneOpensFirstApp =
                     prefs[KEY_KEYBOARD_DONE_OPENS_FIRST_APP] ?: false
             )
@@ -704,6 +712,7 @@ class PreferenceHelper @Inject constructor(
                 ),
                 backOpensAppDrawer = prefs[KEY_BACK_OPENS_APP_DRAWER] ?: true,
                 compactAppTouchArea = prefs[KEY_COMPACT_APP_TOUCH_AREA] ?: false,
+                xmbHome = prefs[KEY_XMB_HOME] ?: false,
                 keyboardDoneOpensFirstApp =
                     prefs[KEY_KEYBOARD_DONE_OPENS_FIRST_APP] ?: false
             )
