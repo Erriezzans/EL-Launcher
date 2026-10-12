@@ -1,7 +1,6 @@
-# Minimo
+# EL-Launcher
 
-Minimo is a minimalist Android launcher that clears the clutter from your home screen. Find the
-apps you need quickly, stay focused, and use your phone more intentionally.
+Fork of minimo-Launcher and goes to xmb style console game launcher.
 
 ## Screenshots:
 
