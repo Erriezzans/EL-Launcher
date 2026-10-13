@@ -18,7 +18,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /** Simple vector-free icons for XMB categories and actions, drawn with a Canvas. */
-enum class XmbGlyph { Star, Apps, Folder, Settings, Bell, Lock }
+enum class XmbGlyph { Star, Apps, Folder, Settings, Bell, Lock, Clock }
 
 @Composable
 fun XmbGlyphIcon(
@@ -35,6 +35,7 @@ fun XmbGlyphIcon(
             XmbGlyph.Settings -> drawGear(color)
             XmbGlyph.Bell -> drawBell(color)
             XmbGlyph.Lock -> drawLock(color)
+            XmbGlyph.Clock -> drawClock(color)
         }
     }
 }
@@ -152,5 +153,25 @@ private fun DrawScope.drawLock(color: Color) {
         topLeft = Offset(w * 0.22f, w * 0.40f),
         size = Size(w * 0.56f, w * 0.44f),
         cornerRadius = CornerRadius(w * 0.08f)
+    )
+}
+
+private fun DrawScope.drawClock(color: Color) {
+    val w = size.width
+    val c = Offset(w / 2f, w / 2f)
+    drawCircle(color = color, radius = w * 0.38f, center = c, style = Stroke(width = w * 0.09f))
+    drawLine(
+        color = color,
+        start = c,
+        end = Offset(c.x, c.y - w * 0.22f),
+        strokeWidth = w * 0.08f,
+        cap = StrokeCap.Round
+    )
+    drawLine(
+        color = color,
+        start = c,
+        end = Offset(c.x + w * 0.16f, c.y + w * 0.08f),
+        strokeWidth = w * 0.08f,
+        cap = StrokeCap.Round
     )
 }

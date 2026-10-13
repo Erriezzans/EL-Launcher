@@ -79,6 +79,6 @@ data class CustomisationState(
     val fastScrollerAlignment: FastScrollerAlignment = FastScrollerAlignment.Right,
     val backOpensAppDrawer: Boolean = true,
     val compactAppTouchArea: Boolean = false,
-    val xmbHome: Boolean = false,
+    val xmbHome: Boolean = true,
     val keyboardDoneOpensFirstApp: Boolean = false
 )

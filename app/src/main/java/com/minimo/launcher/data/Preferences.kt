@@ -83,7 +83,7 @@ data class HomePreferences(
     val fastScrollerAlignment: FastScrollerAlignment = FastScrollerAlignment.Right,
     val backOpensAppDrawer: Boolean = true,
     val compactAppTouchArea: Boolean = false,
-    val xmbHome: Boolean = false,
+    val xmbHome: Boolean = true,
     val keyboardDoneOpensFirstApp: Boolean = false
 )
 
@@ -146,6 +146,6 @@ data class CustomisationPreferences(
     val fastScrollerAlignment: FastScrollerAlignment = FastScrollerAlignment.Right,
     val backOpensAppDrawer: Boolean = true,
     val compactAppTouchArea: Boolean = false,
-    val xmbHome: Boolean = false,
+    val xmbHome: Boolean = true,
     val keyboardDoneOpensFirstApp: Boolean = false
 )

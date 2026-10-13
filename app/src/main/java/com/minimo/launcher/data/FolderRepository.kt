@@ -26,6 +26,11 @@ class FolderRepository @Inject constructor(private val database: AppDatabase) {
             database.withTransaction { LauncherCatalog(apps.getAllApps(), folders.getFolders()) }
         }
 
+    suspend fun create(name: String) = database.withTransaction {
+        val (trimmed, normalized) = validateName(name)
+        folders.insert(FolderEntity(UUID.randomUUID().toString(), trimmed, normalized, isFavourite = false))
+    }
+
     suspend fun createWithApp(name: String, app: AppInfo, isFavourite: Boolean = false) =
         database.withTransaction {
             val current = requireUngroupedApp(app)

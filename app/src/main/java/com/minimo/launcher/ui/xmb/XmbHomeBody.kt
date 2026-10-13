@@ -2,12 +2,16 @@ package com.minimo.launcher.ui.xmb
 
 import android.app.Activity
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,7 +20,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,10 +30,16 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,21 +57,26 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -74,14 +91,18 @@ import com.minimo.launcher.ui.entities.AppInfo
 import com.minimo.launcher.ui.home.FolderInfo
 import com.minimo.launcher.ui.home.HomeScreenState
 import com.minimo.launcher.ui.home.HomeViewModel
-import com.minimo.launcher.ui.home.components.AppListBottomSheetDialog
+import com.minimo.launcher.utils.AppCategorizer
+import com.minimo.launcher.utils.AutoCategory
 import com.minimo.launcher.utils.Constants
+import com.minimo.launcher.utils.RecentApps
 import com.minimo.launcher.utils.launchAppInfo
 import com.minimo.launcher.utils.lockScreen
 import com.minimo.launcher.utils.showNotificationDrawer
 import com.minimo.launcher.utils.uninstallApp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -116,74 +137,140 @@ private data class XmbCategory(
     val title: String,
     val glyph: XmbGlyph,
     val items: List<XmbItem>,
-    val folder: FolderInfo? = null
+    val folder: FolderInfo? = null,
+    val emptyText: String = "Nothing here yet"
 )
 
-private const val KEY_SETTINGS = "settings"
-private const val KEY_FAVOURITES = "favourites"
+private data class BubbleEntry(val label: String, val onClick: () -> Unit)
+
+private data class BubbleState(
+    val anchorX: Float,
+    val anchorY: Float,
+    val below: Boolean,
+    val entries: List<BubbleEntry>
+)
+
+private const val KEY_RECENT = "recent"
 private const val KEY_APPS = "apps"
+private const val KEY_FAVOURITES = "favourites"
+private const val KEY_SETTINGS = "settings"
 
-// English labels. Move these to strings.xml if you want them translated.
-private const val TITLE_SETTINGS = "Settings"
-private const val TITLE_FAVOURITES = "Favourites"
-private const val TITLE_APPS = "Apps"
-private const val TITLE_EMPTY = "Nothing here yet"
-
+// Tab order: Recent, All Apps, (Favourites), your categories, automatic categories, Settings.
 private fun buildCategories(
     state: HomeScreenState,
     context: Context,
-    openDrawer: () -> Unit,
-    openSettings: () -> Unit
+    recentIds: List<String>,
+    autoMap: Map<String, AutoCategory>,
+    openSettings: () -> Unit,
+    newCategory: () -> Unit
 ): List<XmbCategory> {
-    val settings = XmbCategory(
+    val byName = compareBy<AppInfo, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
+    val visible = state.allApps.filter {
+        !it.isHidden && it.packageName != Constants.MINIMO_SETTINGS_PACKAGE
+    }
+    val sorted = visible.sortedWith(byName)
+    val byId = visible.associateBy { it.id }
+
+    val result = mutableListOf<XmbCategory>()
+
+    result += XmbCategory(
+        key = KEY_RECENT,
+        title = "Recent",
+        glyph = XmbGlyph.Clock,
+        items = recentIds.mapNotNull { byId[it] }.map { XmbItem.AppEntry(it) },
+        emptyText = "Apps you open will show up here"
+    )
+
+    result += XmbCategory(
+        key = KEY_APPS,
+        title = "All Apps",
+        glyph = XmbGlyph.Apps,
+        items = sorted.map { XmbItem.AppEntry(it) }
+    )
+
+    val favourites = state.favouriteApps.filter { it.folderId == null && !it.isHidden }
+    if (favourites.isNotEmpty()) {
+        result += XmbCategory(
+            key = KEY_FAVOURITES,
+            title = "Favourites",
+            glyph = XmbGlyph.Star,
+            items = favourites.map { XmbItem.AppEntry(it) }
+        )
+    }
+
+    // Categories the user created (they can add apps to them from the app's long-press menu).
+    state.folders.forEach { info ->
+        result += XmbCategory(
+            key = "folder:${info.folder.id}",
+            title = info.folder.name,
+            glyph = XmbGlyph.Folder,
+            items = info.apps.sortedWith(byName).map { XmbItem.AppEntry(it) },
+            folder = info,
+            emptyText = "Empty. Long-press an app and choose Add to Folder"
+        )
+    }
+
+    // Automatic categories. Apps the user put in their own category are not repeated here.
+    if (autoMap.isNotEmpty()) {
+        val groups = sorted
+            .filter { it.folderId == null }
+            .groupBy { autoMap[it.id] ?: AutoCategory.Other }
+        AutoCategory.values().forEach { category ->
+            val apps = groups[category].orEmpty()
+            if (apps.isNotEmpty()) {
+                result += XmbCategory(
+                    key = "auto:${category.name}",
+                    title = category.title,
+                    glyph = XmbGlyph.Folder,
+                    items = apps.map { XmbItem.AppEntry(it) }
+                )
+            }
+        }
+    }
+
+    result += XmbCategory(
         key = KEY_SETTINGS,
-        title = TITLE_SETTINGS,
+        title = "Settings",
         glyph = XmbGlyph.Settings,
         items = listOf(
             XmbItem.ActionEntry("action:launcher", "Launcher Settings", XmbGlyph.Settings) {
                 openSettings()
+            },
+            XmbItem.ActionEntry("action:newcategory", "New Category", XmbGlyph.Folder) {
+                newCategory()
             },
             XmbItem.ActionEntry("action:notifications", "Notifications", XmbGlyph.Bell) {
                 context.showNotificationDrawer()
             },
             XmbItem.ActionEntry("action:lock", "Lock Screen", XmbGlyph.Lock) {
                 context.lockScreen()
-            },
-            XmbItem.ActionEntry("action:drawer", "App Drawer", XmbGlyph.Apps) {
-                openDrawer()
             }
         )
     )
+    return result
+}
 
-    val favourites = XmbCategory(
-        key = KEY_FAVOURITES,
-        title = TITLE_FAVOURITES,
-        glyph = XmbGlyph.Star,
-        items = state.favouriteApps
-            .filter { it.folderId == null && !it.isHidden }
-            .map { XmbItem.AppEntry(it) }
-    )
+// ---------------------------------------------------------------------------------------------
+// Alphabet helpers
+// ---------------------------------------------------------------------------------------------
 
-    val allApps = XmbCategory(
-        key = KEY_APPS,
-        title = TITLE_APPS,
-        glyph = XmbGlyph.Apps,
-        items = state.allApps
-            .filter { !it.isHidden && it.packageName != Constants.MINIMO_SETTINGS_PACKAGE }
-            .map { XmbItem.AppEntry(it) }
-    )
+private val ALPHABET: List<Char> = listOf('#') + ('A'..'Z').toList()
 
-    val folders = state.folders.map { info ->
-        XmbCategory(
-            key = "folder:${info.folder.id}",
-            title = info.folder.name,
-            glyph = XmbGlyph.Folder,
-            items = info.apps.map { XmbItem.AppEntry(it) },
-            folder = info
-        )
-    }
+private fun letterOf(title: String): Char {
+    val c = title.trim().firstOrNull()?.uppercaseChar() ?: return '#'
+    return if (c in 'A'..'Z') c else '#'
+}
 
-    return listOf(settings, favourites, allApps) + folders
+private fun rankOf(c: Char): Int = if (c == '#') 0 else (c - 'A') + 1
+
+private fun indexForLetter(items: List<XmbItem>, letter: Char): Int {
+    if (items.isEmpty()) return 0
+    val target = rankOf(letter)
+    val ranks = items.map { rankOf(letterOf(it.title)) }
+    val exact = ranks.indexOfFirst { it == target }
+    if (exact >= 0) return exact
+    val next = ranks.indexOfFirst { it > target }
+    return if (next >= 0) next else items.lastIndex
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -207,6 +294,11 @@ private class XmbGeometry(val w: Float, val h: Float, d: Density) {
     /** y of the selected item (centre). */
     val selY = barY + h * 0.25f
 
+    fun itemY(index: Int, itemPos: Float): Float {
+        val d = index - itemPos
+        return selY + d * itemSpacing + gap * d.coerceIn(-1f, 1f)
+    }
+
     fun hitCategory(p: Offset, catPos: Float, count: Int): Int? {
         if (abs(p.y - barY) > catIconPx * 0.95f) return null
         val i = ((p.x - selX) / catSpacing + catPos).roundToInt()
@@ -229,16 +321,16 @@ private val TextShadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(1f, 2f),
 // ---------------------------------------------------------------------------------------------
 
 /**
- * PS3 XrossMediaBar style home: categories run across the top, the items of the selected
- * category run down below it.
+ * PS3 XrossMediaBar style home.
  *
- *  - swipe left/right      -> change category
- *  - swipe up/down         -> move through the items
- *  - tap                   -> select (tap a non-selected entry) / launch (tap the selected item)
- *  - long press an app     -> app options (favourite, rename, hide, folder, uninstall ...)
- *  - long press a folder   -> folder options
- *  - long press empty area -> launcher settings
- *  - pull past the last item -> app drawer, pull past the first item -> notification panel
+ *  - swipe left/right        -> change category
+ *  - swipe / fling up/down   -> move through the items (fast fling, or drag the A-Z bar)
+ *  - tap                     -> select (tap a non-selected entry) / launch (tap the selected item)
+ *  - long press an app       -> bubble menu (opens below the app in the upper half, above it in the lower half)
+ *  - long press a category   -> bubble menu (rename / delete) for your own categories
+ *  - long press empty space  -> search apps
+ *  - pull past the first item -> notification panel
+ *  - back                    -> returns to the first tab, never leaves to another launcher
  */
 @Composable
 fun XmbHomeBody(
@@ -270,15 +362,40 @@ fun XmbHomeBody(
         }
     }
 
-    val openDrawer by rememberUpdatedState(onOpenAppDrawer)
+    remember { RecentApps.load(context) }
+    val recentIds by RecentApps.ids.collectAsStateWithLifecycle()
+
+    val packageManager = context.packageManager
+    val autoMap by produceState<Map<String, AutoCategory>>(emptyMap(), state.allApps) {
+        value = withContext(Dispatchers.Default) {
+            state.allApps.associate {
+                it.id to AutoCategorizer.categorize(packageManager, it.packageName)
+            }
+        }
+    }
+
+    var searchOpen by remember { mutableStateOf(false) }
+    var showNewCategory by remember { mutableStateOf(false) }
+    var bubble by remember { mutableStateOf<BubbleState?>(null) }
+    var dragLetter by remember { mutableStateOf<Char?>(null) }
+
     val openSettings by rememberUpdatedState(onSettingsClick)
-    val categories = remember(state.favouriteApps, state.allApps, state.folders) {
-        buildCategories(state, context, { openDrawer() }, { openSettings() })
+    val categories = remember(
+        state.favouriteApps, state.allApps, state.folders, recentIds, autoMap
+    ) {
+        buildCategories(
+            state = state,
+            context = context,
+            recentIds = recentIds,
+            autoMap = autoMap,
+            openSettings = { openSettings() },
+            newCategory = { showNewCategory = true }
+        )
     }
     val categoriesNow by rememberUpdatedState(categories)
 
     // catPos: fractional index of the selected category. itemPos: same for the item list.
-    val catPos = remember { Animatable(1f) }
+    val catPos = remember { Animatable(0f) }
     val itemPos = remember { Animatable(0f) }
     val savedItem = remember { mutableStateMapOf<String, Int>() }
     val catPosProvider = remember { { catPos.value } }
@@ -292,18 +409,26 @@ fun XmbHomeBody(
     val nearCatNow by rememberUpdatedState(nearCat)
     val centerItem by remember { derivedStateOf { itemPos.value.roundToInt() } }
 
-    val catFadeProvider = remember { { 1f - (abs(catPos.value - catPos.value.roundToInt()) * 2f).coerceIn(0f, 1f) } }
+    val catFadeProvider = remember {
+        { 1f - (abs(catPos.value - catPos.value.roundToInt()) * 2f).coerceIn(0f, 1f) }
+    }
 
-    // Keep the same category selected when categories are added/removed (new folder etc.)
-    var currentKey by remember { mutableStateOf(KEY_FAVOURITES) }
+    // Pick the first tab (Recent, or All Apps when nothing was opened yet) and keep the same tab
+    // selected when tabs are added or removed (new category, newly detected category ...).
+    var currentKey by remember { mutableStateOf<String?>(null) }
+    var ready by remember { mutableStateOf(false) }
     val keys = categories.map { it.key }
     LaunchedEffect(keys) {
-        val idx = keys.indexOf(currentKey)
-        val target = if (idx >= 0) idx else keys.indexOf(KEY_FAVOURITES).coerceAtLeast(0)
-        catPos.snapTo(target.toFloat())
+        val recentHasItems = categories.firstOrNull { it.key == KEY_RECENT }?.items?.isNotEmpty() == true
+        val wanted = currentKey ?: if (recentHasItems) KEY_RECENT else KEY_APPS
+        val found = keys.indexOf(wanted)
+        val idx = if (found >= 0) found else keys.indexOf(KEY_RECENT).coerceAtLeast(0)
+        catPos.snapTo(idx.toFloat())
+        currentKey = keys.getOrNull(idx)
+        ready = true
     }
     LaunchedEffect(nearCat) {
-        keys.getOrNull(nearCat)?.let { currentKey = it }
+        if (ready) keys.getOrNull(nearCat)?.let { currentKey = it }
     }
 
     // Remember the selected item of each category while moving between categories.
@@ -331,10 +456,22 @@ fun XmbHomeBody(
         hapticReady = true
     }
 
-    var optionsApp by remember { mutableStateOf<AppInfo?>(null) }
-    var optionsFolder by remember { mutableStateOf<FolderInfo?>(null) }
-
     val snap = spring<Float>(dampingRatio = 0.85f, stiffness = 380f)
+
+    // Back never leaves to another launcher: close overlays first, then return to the first tab.
+    BackHandler {
+        when {
+            searchOpen -> searchOpen = false
+            bubble != null -> bubble = null
+            else -> scope.launch {
+                if (catPos.value.roundToInt() != 0) {
+                    catPos.animateTo(0f, snap)
+                } else if (itemPos.value.roundToInt() != 0) {
+                    itemPos.animateTo(0f, snap)
+                }
+            }
+        }
+    }
 
     fun activate(item: XmbItem) {
         when (item) {
@@ -355,13 +492,84 @@ fun XmbHomeBody(
             val hPx = constraints.maxHeight.toFloat()
             val geo = remember(wPx, hPx, density) { XmbGeometry(wPx, hPx, density) }
             val rowWidth: Dp = with(density) {
-                (geo.w - (geo.selX - geo.iconPx / 2f) - 12.dp.toPx())
+                (geo.w - (geo.selX - geo.iconPx / 2f) - 36.dp.toPx())
                     .coerceAtLeast(120.dp.toPx())
                     .toDp()
             }
 
             val onDoubleTap: ((Offset) -> Unit)? =
                 if (state.doubleTapToLock) ({ _: Offset -> context.lockScreen() }) else null
+
+            fun appBubble(app: AppInfo, index: Int): BubbleState {
+                val y = geo.itemY(index, itemPos.value)
+                val below = y < geo.h / 2f
+                val entries = buildList {
+                    if (!app.isHidden && app.folderId == null) {
+                        add(
+                            BubbleEntry(
+                                context.getString(
+                                    if (app.isFavourite) R.string.remove_favourite
+                                    else R.string.add_favourite
+                                )
+                            ) { viewModel.onToggleFavouriteAppClick(app) }
+                        )
+                    }
+                    if (!app.isHidden) {
+                        if (app.folderId == null) {
+                            add(BubbleEntry(context.getString(R.string.add_to_folder)) {
+                                viewModel.showFolderPicker(app, fromHome = false)
+                            })
+                        } else {
+                            add(BubbleEntry(context.getString(R.string.remove_from_folder)) {
+                                viewModel.removeFromFolder(app)
+                            })
+                        }
+                    }
+                    add(BubbleEntry(context.getString(R.string.rename)) {
+                        viewModel.onRenameAppClick(app)
+                    })
+                    add(
+                        BubbleEntry(
+                            context.getString(if (app.isHidden) R.string.unhide_app else R.string.hide_app)
+                        ) { viewModel.onToggleHideClick(app) }
+                    )
+                    add(BubbleEntry(context.getString(R.string.launch_delay)) {
+                        viewModel.onLaunchDelayClick(app)
+                    })
+                    if (app.isShortcut) {
+                        add(BubbleEntry(context.getString(R.string.delete_shortcut)) {
+                            onDeleteShortcut(app)
+                        })
+                    } else {
+                        add(BubbleEntry(context.getString(R.string.app_info)) {
+                            context.launchAppInfo(app)
+                        })
+                        add(BubbleEntry(context.getString(R.string.uninstall)) {
+                            context.uninstallApp(app)
+                        })
+                    }
+                }
+                return BubbleState(
+                    anchorX = geo.selX,
+                    anchorY = if (below) y + geo.rowHeight / 2f else y - geo.rowHeight / 2f,
+                    below = below,
+                    entries = entries
+                )
+            }
+
+            fun folderBubble(info: FolderInfo, catIndex: Int): BubbleState = BubbleState(
+                anchorX = geo.selX + (catIndex - catPos.value) * geo.catSpacing,
+                anchorY = geo.barY + geo.catIconPx * 1.1f,
+                below = true,
+                entries = listOf(
+                    BubbleEntry(context.getString(R.string.rename)) {
+                        viewModel.showRenameFolder(info.folder)
+                    },
+                    BubbleEntry(context.getString(R.string.delete)) {
+                        viewModel.showDeleteFolder(info.folder)
+                    }
+                )
+            )
 
             Box(
                 modifier = Modifier
@@ -372,17 +580,14 @@ fun XmbHomeBody(
                             onLongPress = { p ->
                                 val cats = categoriesNow
                                 val ci = geo.hitCategory(p, catPos.value, cats.size)
-                                if (ci != null) {
-                                    cats[ci].folder?.let { optionsFolder = it }
-                                } else {
-                                    val items = cats.getOrNull(nearCatNow)?.items.orEmpty()
-                                    val j = geo.hitItem(p, itemPos.value, items.size)
-                                    if (j != null) {
-                                        scope.launch { itemPos.animateTo(j.toFloat(), snap) }
-                                        (items[j] as? XmbItem.AppEntry)?.let { optionsApp = it.app }
-                                    } else {
-                                        openSettings()
-                                    }
+                                val items = cats.getOrNull(nearCatNow)?.items.orEmpty()
+                                val j = if (ci == null) geo.hitItem(p, itemPos.value, items.size) else null
+                                val folder = if (ci != null) cats[ci].folder else null
+                                val app = if (j != null) (items[j] as? XmbItem.AppEntry)?.app else null
+                                when {
+                                    ci != null && folder != null -> bubble = folderBubble(folder, ci)
+                                    j != null && app != null -> bubble = appBubble(app, j)
+                                    else -> searchOpen = true
                                 }
                             },
                             onTap = { p ->
@@ -457,7 +662,7 @@ fun XmbHomeBody(
                                     1 -> scope.launch {
                                         val projected = catPos.value - (velocity.x / geo.catSpacing) * 0.12f
                                         val target = projected.roundToInt()
-                                            .coerceIn((catPos.value.roundToInt() - 2), (catPos.value.roundToInt() + 2))
+                                            .coerceIn(catPos.value.roundToInt() - 2, catPos.value.roundToInt() + 2)
                                             .coerceIn(0, lastCat)
                                         catPos.animateTo(target.toFloat(), snap)
                                     }
@@ -467,7 +672,6 @@ fun XmbHomeBody(
                                         when {
                                             v > lastItem + 0.6f -> {
                                                 itemPos.animateTo(lastItem.toFloat(), snap)
-                                                openDrawer()
                                             }
 
                                             v < -0.6f -> {
@@ -476,11 +680,18 @@ fun XmbHomeBody(
                                             }
 
                                             else -> {
-                                                val projected = v - (velocity.y / geo.itemSpacing) * 0.12f
-                                                val target = projected.roundToInt()
-                                                    .coerceIn(v.roundToInt() - 6, v.roundToInt() + 6)
-                                                    .coerceIn(0, lastItem)
-                                                itemPos.animateTo(target.toFloat(), snap)
+                                                // Fast fling: let it coast, then settle on the nearest item.
+                                                val itemsPerSecond = -velocity.y / geo.itemSpacing
+                                                itemPos.updateBounds(0f, lastItem.toFloat())
+                                                itemPos.animateDecay(
+                                                    itemsPerSecond,
+                                                    exponentialDecay<Float>(frictionMultiplier = 0.45f)
+                                                )
+                                                itemPos.updateBounds(null, null)
+                                                itemPos.animateTo(
+                                                    itemPos.value.roundToInt().coerceIn(0, lastItem).toFloat(),
+                                                    snap
+                                                )
                                             }
                                         }
                                     }
@@ -523,10 +734,11 @@ fun XmbHomeBody(
                 }
 
                 // Items of the nearest category (only a window around the selection is composed)
-                val items = categories.getOrNull(nearCat)?.items.orEmpty()
+                val currentCat = categories.getOrNull(nearCat)
+                val items = currentCat?.items.orEmpty()
                 if (items.isEmpty()) {
                     Text(
-                        text = TITLE_EMPTY,
+                        text = currentCat?.emptyText ?: "Nothing here yet",
                         color = Color.White,
                         fontSize = 16.sp,
                         modifier = Modifier
@@ -536,6 +748,7 @@ fun XmbHomeBody(
                                     (geo.selY - geo.rowHeight / 2f).roundToInt()
                                 )
                             }
+                            .width(rowWidth)
                             .graphicsLayer { alpha = 0.7f * catFadeProvider() },
                         style = LocalTextStyle.current.copy(shadow = TextShadow)
                     )
@@ -559,91 +772,108 @@ fun XmbHomeBody(
                     }
                 }
             }
+
+            // A-Z bar beside the list (only for alphabetical lists)
+            val currentCategory = categories.getOrNull(nearCat)
+            val showAlphabet = currentCategory != null &&
+                    currentCategory.key != KEY_RECENT &&
+                    currentCategory.key != KEY_SETTINGS &&
+                    currentCategory.key != KEY_FAVOURITES &&
+                    currentCategory.items.size >= 6
+            if (showAlphabet) {
+                val alphaItems = currentCategory?.items.orEmpty()
+                XmbAlphabetBar(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(y = 24.dp)
+                        .padding(end = 2.dp)
+                        .width(26.dp)
+                        .height(with(density) { min(hPx * 0.56f, 27 * 20.dp.toPx()).toDp() }),
+                    activeLetter = {
+                        alphaItems.getOrNull(itemPos.value.roundToInt())?.let { letterOf(it.title) }
+                    },
+                    onLetterSelected = { letter ->
+                        dragLetter = letter
+                        scope.launch {
+                            itemPos.snapTo(indexForLetter(alphaItems, letter).toFloat())
+                        }
+                    },
+                    onFinished = {
+                        dragLetter = null
+                        scope.launch {
+                            itemPos.animateTo(
+                                itemPos.value.roundToInt()
+                                    .coerceIn(0, (alphaItems.size - 1).coerceAtLeast(0)).toFloat(),
+                                snap
+                            )
+                        }
+                    }
+                )
+            }
+
+            dragLetter?.let { letter ->
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(88.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = letter.toString(),
+                        color = Color.White,
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            bubble?.let { b ->
+                XmbBubble(state = b, onDismiss = { bubble = null })
+            }
+        }
+
+        if (searchOpen) {
+            XmbSearchOverlay(
+                apps = categories.firstOrNull { it.key == KEY_APPS }
+                    ?.items.orEmpty().mapNotNull { (it as? XmbItem.AppEntry)?.app },
+                autoOpenSingle = state.autoOpenApp,
+                viewModel = viewModel,
+                iconCacheRevision = iconCacheRevision,
+                onLaunch = { app ->
+                    searchOpen = false
+                    viewModel.onAppLaunchRequest(app)
+                },
+                onDismiss = { searchOpen = false }
+            )
         }
     }
 
-    optionsApp?.let { app ->
-        AppListBottomSheetDialog(
-            appName = app.name,
-            folderId = app.folderId,
-            onFolderClick = {
-                optionsApp = null
-                viewModel.showFolderPicker(app, fromHome = true)
-            },
-            onRemoveFromFolderClick = {
-                optionsApp = null
-                viewModel.removeFromFolder(app)
-            },
-            isFavourite = app.isFavourite,
-            isHidden = app.isHidden,
-            isShortcut = app.isShortcut,
-            onDismiss = { optionsApp = null },
-            statusBarVisible = statusBarVisible,
-            navigationBarVisible = navigationBarVisible,
-            useDarkStatusBarIcons = useDarkStatusBarIcons,
-            useDarkNavigationBarIcons = useDarkNavigationBarIcons,
-            onToggleFavouriteClick = {
-                optionsApp = null
-                viewModel.onToggleFavouriteAppClick(app)
-            },
-            onRenameClick = {
-                optionsApp = null
-                viewModel.onRenameAppClick(app)
-            },
-            onToggleHideClick = {
-                optionsApp = null
-                viewModel.onToggleHideClick(app)
-            },
-            onAppInfoClick = {
-                optionsApp = null
-                context.launchAppInfo(app)
-            },
-            onUninstallClick = {
-                optionsApp = null
-                context.uninstallApp(app)
-            },
-            onDeleteShortcutClick = {
-                optionsApp = null
-                onDeleteShortcut(app)
-            },
-            onLaunchDelayClick = {
-                optionsApp = null
-                viewModel.onLaunchDelayClick(app)
-            }
-        )
-    }
-
-    optionsFolder?.let { info ->
+    if (showNewCategory) {
+        var name by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { optionsFolder = null },
-            title = { Text(info.folder.name) },
+            onDismissRequest = { showNewCategory = false },
+            title = { Text("New Category") },
             text = {
-                Column {
-                    TextButton(onClick = {
-                        optionsFolder = null
-                        viewModel.toggleFolderFavourite(info.folder.id)
-                    }) {
-                        Text(
-                            stringResource(
-                                if (info.folder.isFavourite) R.string.remove_favourite
-                                else R.string.add_favourite
-                            )
-                        )
-                    }
-                    TextButton(onClick = {
-                        optionsFolder = null
-                        viewModel.showRenameFolder(info.folder)
-                    }) { Text(stringResource(R.string.rename)) }
-                    TextButton(onClick = {
-                        optionsFolder = null
-                        viewModel.showDeleteFolder(info.folder)
-                    }) { Text(stringResource(R.string.delete)) }
-                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Name") }
+                )
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmed = name.trim()
+                        if (trimmed.isNotEmpty()) viewModel.createCategory(trimmed)
+                        showNewCategory = false
+                    }
+                ) { Text("Create") }
+            },
             dismissButton = {
-                TextButton(onClick = { optionsFolder = null }) {
-                    Text(stringResource(R.string.cancel))
+                TextButton(onClick = { showNewCategory = false }) {
+                    Text(context.getString(R.string.cancel))
                 }
             }
         )
@@ -708,6 +938,29 @@ private fun XmbCategoryIcon(
 }
 
 @Composable
+private fun XmbAppIcon(
+    app: AppInfo,
+    size: Dp,
+    sizePx: Int,
+    viewModel: HomeViewModel,
+    iconCacheRevision: Int
+) {
+    val icon by produceState<ImageBitmap?>(null, app.id, sizePx to iconCacheRevision) {
+        value = viewModel.loadAppIcon(app, sizePx)
+    }
+    val bitmap = icon
+    if (bitmap != null) {
+        Image(bitmap = bitmap, contentDescription = null, modifier = Modifier.size(size))
+    } else {
+        Box(
+            Modifier
+                .size(size)
+                .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+        )
+    }
+}
+
+@Composable
 private fun XmbItemRow(
     item: XmbItem,
     index: Int,
@@ -725,9 +978,7 @@ private fun XmbItemRow(
     Row(
         modifier = Modifier
             .offset {
-                val d = index - itemPosProvider()
-                val y = geo.selY + d * geo.itemSpacing + geo.gap * d.coerceIn(-1f, 1f) -
-                        geo.rowHeight / 2f
+                val y = geo.itemY(index, itemPosProvider()) - geo.rowHeight / 2f
                 IntOffset((geo.selX - geo.iconPx / 2f).roundToInt(), y.roundToInt())
             }
             .width(rowWidth)
@@ -751,28 +1002,13 @@ private fun XmbItemRow(
         Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
             when (item) {
                 is XmbItem.AppEntry -> {
-                    val px = geo.iconPx.roundToInt()
-                    val icon by produceState<ImageBitmap?>(
-                        null,
-                        item.app.id,
-                        px to iconCacheRevision
-                    ) {
-                        value = viewModel.loadAppIcon(item.app, px)
-                    }
-                    val bitmap = icon
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = null,
-                            modifier = Modifier.size(44.dp)
-                        )
-                    } else {
-                        Box(
-                            Modifier
-                                .size(44.dp)
-                                .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
-                        )
-                    }
+                    XmbAppIcon(
+                        app = item.app,
+                        size = 44.dp,
+                        sizePx = geo.iconPx.roundToInt(),
+                        viewModel = viewModel,
+                        iconCacheRevision = iconCacheRevision
+                    )
                     if (item.app.showNotificationDot) {
                         Box(
                             Modifier
@@ -807,6 +1043,213 @@ private fun XmbItemRow(
             overflow = TextOverflow.Ellipsis,
             style = LocalTextStyle.current.copy(shadow = TextShadow)
         )
+    }
+}
+
+@Composable
+private fun XmbAlphabetBar(
+    modifier: Modifier,
+    activeLetter: () -> Char?,
+    onLetterSelected: (Char) -> Unit,
+    onFinished: () -> Unit
+) {
+    val active by remember { derivedStateOf { activeLetter() } }
+
+    fun letterAt(y: Float, height: Int): Char {
+        val index = ((y / height.coerceAtLeast(1)) * ALPHABET.size).toInt()
+        return ALPHABET[index.coerceIn(0, ALPHABET.lastIndex)]
+    }
+
+    Column(
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { p ->
+                    onLetterSelected(letterAt(p.y, size.height))
+                    onFinished()
+                })
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { p -> onLetterSelected(letterAt(p.y, size.height)) },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        onLetterSelected(letterAt(change.position.y, size.height))
+                    },
+                    onDragEnd = { onFinished() },
+                    onDragCancel = { onFinished() }
+                )
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceEvenly
+    ) {
+        ALPHABET.forEach { ch ->
+            Text(
+                text = ch.toString(),
+                color = Color.White.copy(alpha = if (active == ch) 1f else 0.55f),
+                fontSize = 10.sp,
+                fontWeight = if (active == ch) FontWeight.Bold else FontWeight.Normal,
+                style = LocalTextStyle.current.copy(shadow = TextShadow)
+            )
+        }
+    }
+}
+
+/**
+ * Floating menu. It opens below the pressed item when that item is in the upper half of the
+ * screen and above it when the item is in the lower half.
+ */
+@Composable
+private fun XmbBubble(state: BubbleState, onDismiss: () -> Unit) {
+    Layout(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) },
+        content = {
+            Column(
+                modifier = Modifier
+                    .pointerInput(Unit) { detectTapGestures(onTap = { }) }
+                    .background(Color(0xF01A2033), RoundedCornerShape(18.dp))
+                    .padding(vertical = 6.dp)
+            ) {
+                state.entries.forEach { entry ->
+                    Text(
+                        text = entry.label,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onDismiss()
+                                entry.onClick()
+                            }
+                            .padding(horizontal = 20.dp, vertical = 11.dp)
+                    )
+                }
+            }
+        }
+    ) { measurables, constraints ->
+        val margin = 8.dp.roundToPx()
+        val gap = 10.dp.roundToPx()
+        val placeable = measurables.first().measure(
+            constraints.copy(
+                minWidth = 0,
+                minHeight = 0,
+                maxWidth = (constraints.maxWidth * 0.72f).toInt()
+            )
+        )
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            val minX = margin
+            val maxX = max(minX, constraints.maxWidth - placeable.width - margin)
+            val x = (state.anchorX - 28.dp.roundToPx()).roundToInt().coerceIn(minX, maxX)
+            val rawY = if (state.below) {
+                state.anchorY + gap
+            } else {
+                state.anchorY - gap - placeable.height
+            }
+            val maxY = max(0, constraints.maxHeight - placeable.height)
+            placeable.place(x, rawY.roundToInt().coerceIn(0, maxY))
+        }
+    }
+}
+
+@Composable
+private fun XmbSearchOverlay(
+    apps: List<AppInfo>,
+    autoOpenSingle: Boolean,
+    viewModel: HomeViewModel,
+    iconCacheRevision: Int,
+    onLaunch: (AppInfo) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val density = LocalDensity.current
+    val iconPx = with(density) { 40.dp.roundToPx() }
+    val matches = remember(query, apps) {
+        val q = query.trim()
+        if (q.isEmpty()) apps else apps.filter { it.name.contains(q, ignoreCase = true) }
+    }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(query) {
+        if (autoOpenSingle && query.isNotBlank() && matches.size == 1) onLaunch(matches[0])
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.88f))
+            .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) }
+            .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
+            .imePadding()
+    ) {
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 20.sp),
+                    cursorBrush = SolidColor(Color.White),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { matches.firstOrNull()?.let(onLaunch) }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "Search apps",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 20.sp
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(matches, key = { it.id }) { app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onLaunch(app) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        XmbAppIcon(
+                            app = app,
+                            size = 40.dp,
+                            sizePx = iconPx,
+                            viewModel = viewModel,
+                            iconCacheRevision = iconCacheRevision
+                        )
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            text = app.name,
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

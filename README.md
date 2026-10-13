@@ -18,14 +18,18 @@ Fork of minimo-Launcher and goes to xmb style console game launcher.
 
 ## XMB Home (PS3-style cross menu)
 
-Turn it on in **Settings > Customisation > XMB Home**.
+XMB Home is the default home screen. You can switch it off in **Settings > Customisation > XMB Home**.
 
-- Swipe left/right to change category (Settings, Favourites, Apps, then your folders).
-- Swipe up/down to move through the items of that category.
-- Tap an item to select it, tap the selected item to launch it.
-- Long-press an app for its options, long-press a folder icon for folder options,
-  long-press empty space for launcher settings.
-- Pull past the last item to open the app drawer, past the first to open the notification panel.
+Tabs, left to right: **Recent**, **All Apps**, **Favourites** (if any), your own categories, automatic
+categories (Games, Social, Music, ...), and **Settings** last.
+
+- Swipe left/right to change tab, swipe or fling up/down to move through apps.
+- Drag the **A-Z bar** at the right edge to jump to a letter.
+- Tap an app to select it, tap the selected app to launch it.
+- Long-press an app for a bubble menu (opens below the app in the upper half of the screen, above it in the lower half).
+- Long-press empty space to search your apps.
+- Create your own category in **Settings > New Category**, then long-press an app > **Add to Folder**.
+- Back always returns to the first tab; it never leaves to another launcher.
 
 Code lives in `app/src/main/java/com/minimo/launcher/ui/xmb/`.
 

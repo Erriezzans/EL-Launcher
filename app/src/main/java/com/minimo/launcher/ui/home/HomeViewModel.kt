@@ -27,6 +27,7 @@ import com.minimo.launcher.ui.entities.toAppPreferenceTarget
 import com.minimo.launcher.utils.AppIconRepository
 import com.minimo.launcher.utils.AppUtils
 import com.minimo.launcher.utils.Constants
+import com.minimo.launcher.utils.RecentApps
 import com.minimo.launcher.utils.HomeAppsAlignmentHorizontal
 import com.minimo.launcher.utils.HomeAppsAlignmentVertical
 import com.minimo.launcher.utils.HomeClockAlignment
@@ -297,6 +298,8 @@ class HomeViewModel @Inject constructor(
     fun assignToFolder(app: AppInfo, id: String) =
         folderOperation { folderRepository.assign(app, id) }
 
+    fun createCategory(name: String) = folderOperation { folderRepository.create(name) }
+
     fun removeFromFolder(app: AppInfo) = folderOperation { folderRepository.remove(app) }
     fun toggleFolderFavourite(id: String) = folderOperation { folderRepository.toggleFavourite(id) }
     fun deleteFolder(id: String) = folderOperation { folderRepository.delete(id) }
@@ -516,6 +519,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun launchApp(app: AppInfo) {
+        RecentApps.record(applicationContext, app.id)
         when (app.itemType) {
             AppItemType.APP -> applicationContext.launchApp(
                 app.packageName,
