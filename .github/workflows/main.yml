@@ -19,7 +19,7 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
-      -       - name: Build debug APK
+      - name: Build debug APK
         run: |
           chmod +x gradlew
           ./gradlew assembleFossDebug 2>&1 | tee build.log; code=${PIPESTATUS[0]}
