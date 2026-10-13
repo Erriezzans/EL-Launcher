@@ -19,10 +19,13 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
-      - name: Build debug APK
+      -       - name: Build debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleFossDebug --stacktrace
+          ./gradlew assembleFossDebug 2>&1 | tee build.log; code=${PIPESTATUS[0]}
+          echo "=== COMPILE ERRORS ==="
+          grep -E "^e: " build.log || true
+          exit $code
 
       - uses: actions/upload-artifact@v4
         with:
