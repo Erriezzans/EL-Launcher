@@ -369,7 +369,7 @@ fun XmbHomeBody(
     val autoMap by produceState<Map<String, AutoCategory>>(emptyMap(), state.allApps) {
         value = withContext(Dispatchers.Default) {
             state.allApps.associate {
-                it.id to AutoCategorizer.categorize(packageManager, it.packageName)
+                it.id to AppCategorizer.categorize(packageManager, it.packageName)
             }
         }
     }
